@@ -13,20 +13,16 @@ app = FastAPI()
 
 
 
-# to get a string like this run:
-# openssl rand -hex 32
+
 SECRET_KEY = "6efd7efeeaa3a32e7725ca4e9bd6a3f08a931b2be8d7a773f952d5115cbe4d40"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
-fake_users_db = {
-    "johndoe": {
-        "username": "johndoe",
-        "full_name": "John Doe",
-        "email": "johndoe@example.com",
-        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
-        "disabled": False,
+user_database = {
+    "asdf": {
+        "username": "asdf",
+        "hashed_password": "$2b$12$8hCTc.cGZKa4RZGxEOrSqeEsixZCWyT.RnEQvfrp51tE5eXy2jS7W",
     }
 }
 
@@ -42,9 +38,7 @@ class TokenData(BaseModel):
 
 class User(BaseModel):
     username: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    disabled: Optional[bool] = None
+ 
 
 
 class UserInDB(User):
@@ -61,8 +55,8 @@ def verify_password(input_password, hashed_password):
     return password.verify(input_password, hashed_password)
 
 
-def get_hashed_password(password):
-    return password.hash(password)
+def get_hashed_password(input_password):
+    return password.hash(input_password)
 
 
 def get_user(db, username: str):
@@ -105,21 +99,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
-    user = get_user(fake_users_db, username=token_data.username)
+    user = get_user(user_database, username=token_data.username)
     if user is None:
         raise credentials_exception
     return user
 
 
-async def get_current_active_user(current_user: User = Depends(get_current_user)):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
-
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(fake_users_db, form_data.username, form_data.password)
+    user = authenticate_user(user_database, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -134,13 +123,14 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 
 @app.get("/users/me/", response_model=User)
-async def read_users_me(current_user: User = Depends(get_current_active_user)):
+async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
 @app.get("/users/me/items/")
-async def read_own_items(current_user: User = Depends(get_current_active_user)):
+async def read_own_items(current_user: User = Depends(get_current_user)):
     return [{"item_id": "Foo", "owner": current_user.username}]
+
 
 class Item(BaseModel):
     id: int
@@ -148,7 +138,8 @@ class Item(BaseModel):
     
 # Get spesific value operation
 @app.get("/menu/{item_id}")
-async def read_menu(item_id : int):
+async def read_menu(item_id : int, token:str = Depends(get_current_user)):
+
     for menu_item in data['menu']:
         if menu_item['id'] == item_id:
             return menu_item
@@ -158,12 +149,12 @@ async def read_menu(item_id : int):
 
 # Get all value operation
 @app.get("/men/u")
-async def show_menu():
+async def show_menu(token:str = Depends(get_current_user)):
     return data["menu"]
 
 # Update operation
 @app.put("/menu/")
-async def update_menu(item:Item):
+async def update_menu(item:Item, token:str = Depends(get_current_user)):
     chosen_id = -1
     for i in range (len(data["menu"])):
         if (data["menu"][i]["id"] == item.id):
@@ -181,7 +172,7 @@ async def update_menu(item:Item):
 # Post operation
 
 @app.post("/menu")
-async def add_menu(item:Item):
+async def add_menu(item:Item, token:str = Depends(get_current_user)):
     data["menu"].append({"id":item.id, "name":item.name})
     with open("menu.json","w") as postFile:
         json.dump(data, postFile)
@@ -190,7 +181,7 @@ async def add_menu(item:Item):
 # Delete operation
 
 @app.delete("/menu/{item_id}")
-async def delete_menu(item_id:int):
+async def delete_menu(item_id:int, token:str = Depends(get_current_user)):
     chosen_id = 0
     for menu_item in data["menu"]:
         if menu_item["id"] == item_id:
@@ -202,3 +193,4 @@ async def delete_menu(item_id:int):
     raise HTTPException(
         status_code = 404, detail=f'Item not found'
     )
+
